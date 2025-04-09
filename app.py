@@ -95,40 +95,43 @@ def process_video(video_id):
         return None
 
 def get_playlist_info(yt_url):
-    """Fetch metadata for all videos in a playlist or channel with caching."""
-    cache = load_cache(PLAYLIST_CACHE_FILE, {})
-    cached_entry = cache.get(yt_url, {})
-    cached_videos = cached_entry.get('videos', [])
-    physical_mental = cached_entry.get('videos', [])
-    last_updated = cached_entry.get('last_updated', 0)
+    """Fetch metadata for all videos in a playlist or channel."""
 
     try:
-        with yt_dlp.YoutubeDL({'extract_flat': True, 'quiet': False}) as ydl:
+        with yt_dlp.YoutubeDL({'extract_flat': True, 'quiet': False, 'skip_download': True}) as ydl:
             info = ydl.extract_info(yt_url, download=False)
             current_videos = info.get('entries', [])
             playlist_title = info.get('title', 'Sponsor-Free Podcast')
             playlist_description = info.get('description', 'A podcast feed with sponsor segments removed')
+            thumbnails = info.get('thumbnails', [])  # Fetch playlist thumbnails
+
+            # Select the highest resolution thumbnail (the last one is usually the highest)
+            thumbnail_url = thumbnails[-1]['url'] if thumbnails else ''
+
+            # Cache videos
+            cache = load_cache(VIDEO_METADATA_CACHE, {})
+            for video in current_videos:
+                video_id = video['id']
+                if video_id not in cache:
+                    video_info = {
+                        'title': video.get('title', f"Video {video_id}"),
+                        'description': video.get('description', "No description available"),
+                        'thumbnail': info.get('thumbnails', [])[-1]['url'] if info.get('thumbnails') else '',
+                        'duration': video.get('duration', 0)
+                    }
+                    cache[video_id] = video_info
 
             # Merge cached videos with new ones
             video_ids = {v['id'] for v in current_videos}
-            updated_videos = cached_videos + [v for v in current_videos if v['id'] not in {cv['id'] for cv in cached_videos}]
 
-            cache[yt_url] = {
-                'title': playlist_title,
-                'description': playlist_description,
-                'videos': updated_videos,
-                'last_updated': int(time.time())
-            }
-            save_cache(PLAYLIST_CACHE_FILE, cache)
-            return playlist_title, playlist_description, updated_videos
+            save_cache(VIDEO_METADATA_CACHE, cache)
+
+            return playlist_title, playlist_description, thumbnail_url, video_ids
     except Exception as e:
-        logger.error(f"Failed to extract info for {yt_url}: {str(e)}")
-        if cached_videos:  # Fall back to cache if available
-            return cached_entry.get('title', 'Sponsor-Free Podcast'), cached_entry.get('description', 'Cached podcast feed'), cached_videos
-        return "Sponsor-Free Podcast", "Error fetching playlist info", []
+        return "Sponsor-Free Podcast", "Error fetching playlist info", "", []
 
 def get_video_info(video_id):
-    """Fetch metadata for a single video with caching."""
+    """Fetch metadata for a single video with caching, including thumbnails."""
     cache = load_cache(VIDEO_METADATA_CACHE, {})
     if video_id in cache:
         return cache[video_id]
@@ -137,7 +140,9 @@ def get_video_info(video_id):
         with yt_dlp.YoutubeDL({'quiet': False}) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
             thumbnails = info.get('thumbnails', [])
-            thumbnail_url = next((t['url'] for t in thumbnails if t['url'].endswith(('.jpg', '.png'))), thumbnails[0]['url'] if thumbnails else '')
+            # Select the highest resolution thumbnail (usally the last one)
+            thumbnail_url = thumbnails[-1]['url'] if thumbnails else ''
+
             video_info = {
                 'title': info.get('title', f"Video {video_id}"),
                 'description': info.get('description', "No description available"),
@@ -161,31 +166,27 @@ def generate_rss(yt_url):
     yt_url = unquote(yt_url)
     logger.info(f"Generating RSS for {yt_url}")
 
-    playlist_title, playlist_description, videos = get_playlist_info(yt_url)
-    if not videos:
+    playlist_title, playlist_description, playlist_thumbnail, videos_ids = get_playlist_info(yt_url)
+    if len(videos_ids) == 0:
         return Response("Error: No videos found in playlist", status=500)
 
     podcast = Podcast(
         name=playlist_title,
         website=BASE_URL,
-        description=playlist_description,
-        explicit=False
+        description=playlist_description or "No description available",
+        explicit=False,
+        image=playlist_thumbnail
     )
 
-    for video in videos:
-        video_id = video.get('id')
-        if not video_id:
-            logger.warning("Skipping video with no ID")
-            continue
-
+    for video_id in videos_ids:
         video_info = get_video_info(video_id)
         audio_url = f'{BASE_URL}episodes/{video_id}_clean.mp3'
         estimated_size = video_info['duration'] * 24000 if video_info['duration'] else 0
 
         podcast.episodes.append(Episode(
             title=video_info['title'],
-            summary=video_info['description'],
-            image=video_info['thumbnail'],
+            summary=video_info.get('description', "No description available"),
+            image=video_info['thumbnail'],  # Use video-specific thumbnail
             media=Media(audio_url, estimated_size, type='audio/mpeg')
         ))
         logger.info(f"Added episode {video_id} to RSS feed")
