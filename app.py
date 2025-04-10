@@ -94,9 +94,14 @@ def process_video(video_id):
         logger.error(f"Error processing video {video_id}: {str(e)}\n{traceback.format_exc()}")
         return None
 
+def clean_thumbnail_url(url):
+    """Remove query parameters from thumbnail URLs."""
+    if not url:
+        return ''
+    return url.split('?')[0]
+
 def get_playlist_info(yt_url):
     """Fetch metadata for all videos in a playlist or channel."""
-
     try:
         with yt_dlp.YoutubeDL({'extract_flat': True, 'quiet': False, 'skip_download': True}) as ydl:
             info = ydl.extract_info(yt_url, download=False)
@@ -104,27 +109,26 @@ def get_playlist_info(yt_url):
             playlist_title = info.get('title', 'Sponsor-Free Podcast')
             playlist_description = info.get('description', 'A podcast feed with sponsor segments removed')
             playlist_author = info.get('uploader', 'Unknown')
-            thumbnails = info.get('thumbnails', [])  # Fetch playlist thumbnails
+            thumbnails = info.get('thumbnails', [])
 
-            # Select the highest resolution thumbnail (the last one is usually the highest)
-            thumbnail_url = thumbnails[-1]['url'] if thumbnails else ''
+            # Select the highest resolution thumbnail and clean the URL
+            thumbnail_url = clean_thumbnail_url(thumbnails[-1]['url'] if thumbnails else '')
 
             # Cache videos
             cache = load_cache(VIDEO_METADATA_CACHE, {})
             for video in current_videos:
                 video_id = video['id']
                 if video_id not in cache:
+                    video_thumbnails = video.get('thumbnails', [])
                     video_info = {
                         'title': video.get('title', f"Video {video_id}"),
                         'description': video.get('description', "No description available"),
-                        'thumbnail': info.get('thumbnails', [])[-1]['url'] if info.get('thumbnails') else '',
+                        'thumbnail': clean_thumbnail_url(video_thumbnails[-1]['url'] if video_thumbnails else ''),
                         'duration': video.get('duration', 0)
                     }
                     cache[video_id] = video_info
 
-            # Merge cached videos with new ones
             video_ids = {v['id'] for v in current_videos}
-
             save_cache(VIDEO_METADATA_CACHE, cache)
 
             return playlist_title, playlist_description, playlist_author, thumbnail_url, video_ids
@@ -141,8 +145,8 @@ def get_video_info(video_id):
         with yt_dlp.YoutubeDL({'quiet': False}) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
             thumbnails = info.get('thumbnails', [])
-            # Select the highest resolution thumbnail (usally the last one)
-            thumbnail_url = thumbnails[-1]['url'] if thumbnails else ''
+            # Select the highest resolution thumbnail and clean the URL
+            thumbnail_url = clean_thumbnail_url(thumbnails[-1]['url'] if thumbnails else '')
 
             video_info = {
                 'title': info.get('title', f"Video {video_id}"),
