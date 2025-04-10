@@ -166,9 +166,21 @@ def get_video_info(video_id):
             'duration': 0
         }
 
-@app.route('/<path:yt_url>/podcast.rss')
-def generate_rss(yt_url):
-    yt_url = unquote(yt_url)
+def get_youtube_url(identifier):
+    """Convert various YouTube identifiers to full URLs."""
+    identifier = identifier.strip('/')
+    
+    if identifier.startswith('@'):  # Channel handle
+        return f'https://youtube.com/{identifier}'
+    elif 'youtube.com' in identifier or 'youtu.be' in identifier:
+        return identifier  # Already a full URL
+    else:  # Assuming it's a playlist ID
+        return f'https://youtube.com/playlist?list={identifier}'
+
+@app.route('/<path:yt_identifier>/podcast.rss')
+def generate_rss(yt_identifier):
+    yt_identifier = unquote(yt_identifier)
+    yt_url = get_youtube_url(yt_identifier)
     logger.info(f"Generating RSS for {yt_url}")
 
     playlist_title, playlist_description, playlist_author, playlist_thumbnail, videos_ids = get_playlist_info(yt_url)
