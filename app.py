@@ -44,25 +44,6 @@ def save_cache(file_path, data):
     except Exception as e:
         logger.error(f"Error saving cache {file_path}: {str(e)}")
 
-def get_duration(audio_path):
-    """Get audio duration using ffprobe."""
-    try:
-        result = subprocess.run(
-            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', 
-             '-of', 'default=noprint_wrappers=1:nokey=1', audio_path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=True
-        )
-        return float(result.stdout.strip())
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error getting duration: {e.stderr}")
-        raise
-    except ValueError:
-        logger.error("Invalid duration value")
-        raise
-
 def process_video(video_id):
     """Process video with optimized downloading and slicing."""
     clean_audio_path = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
@@ -73,12 +54,16 @@ def process_video(video_id):
 
     try:
         audio_path = None
+        total_duration = None
         # Check for existing downloaded files
         for f in os.listdir(EPISODES_DIR):
             if f.startswith(f'{video_id}.') and not f.endswith('_clean.mp3'):
                 candidate = os.path.join(EPISODES_DIR, f)
                 if os.path.getsize(candidate) > 0:
                     audio_path = candidate
+                    # Get duration from video metadata cache
+                    cache = load_cache(VIDEO_METADATA_CACHE, {})
+                    total_duration = cache.get(video_id, {}).get('duration', 0)
                     logger.info(f"Found existing audio file: {audio_path}")
                     break
 
@@ -94,12 +79,7 @@ def process_video(video_id):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=True)
                 audio_path = ydl.prepare_filename(info)
-                
-            if not os.path.exists(audio_path):
-                for f in os.listdir(EPISODES_DIR):
-                    if f.startswith(f'{video_id}.'):
-                        audio_path = os.path.join(EPISODES_DIR, f)
-                        break
+                total_duration = info.get('duration', 0)
 
         # Verify successful download
         if not audio_path or os.path.getsize(audio_path) == 0:
@@ -125,7 +105,6 @@ def process_video(video_id):
                     merged.append(seg)
 
         # Calculate keep intervals
-        total_duration = get_duration(audio_path)
         intervals = []
         prev_end = 0.0
 
@@ -162,7 +141,7 @@ def process_video(video_id):
                 '-map', '[out]', '-c:a', 'libmp3lame', '-q:a', '2', clean_audio_path
             ], check=True)
 
-        os.remove(audio_path)
+        os.remove(audio_path, ignore_errors=True)
         logger.info(f"Successfully processed {video_id}")
         return clean_audio_path
 
