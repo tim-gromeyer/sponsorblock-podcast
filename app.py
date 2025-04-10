@@ -2,13 +2,13 @@ from flask import Flask, Response, send_from_directory
 from urllib.parse import unquote
 import yt_dlp
 import requests
-from pydub import AudioSegment
 from podgen import Podcast, Episode, Media, Person
 import os
 import logging
 import traceback
 import json
 from datetime import timedelta
+import subprocess
 
 app = Flask(__name__)
 
@@ -44,54 +44,133 @@ def save_cache(file_path, data):
     except Exception as e:
         logger.error(f"Error saving cache {file_path}: {str(e)}")
 
+def get_duration(audio_path):
+    """Get audio duration using ffprobe."""
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', 
+             '-of', 'default=noprint_wrappers=1:nokey=1', audio_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        return float(result.stdout.strip())
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error getting duration: {e.stderr}")
+        raise
+    except ValueError:
+        logger.error("Invalid duration value")
+        raise
+
 def process_video(video_id):
-    """Process a video: download audio, remove sponsored segments, and save the cleaned audio."""
+    """Process video with optimized downloading and slicing."""
     clean_audio_path = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
+    
     if os.path.exists(clean_audio_path) and os.path.getsize(clean_audio_path) > 0:
         logger.info(f"Using existing clean audio for {video_id}")
         return clean_audio_path
 
     try:
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': os.path.join(EPISODES_DIR, f'{video_id}.%(ext)s'),
-            'quiet': False,
-            'http_headers': {'User-Agent': 'Mozilla/5.0'},
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([f'https://www.youtube.com/watch?v={video_id}'])
-        audio_path = os.path.join(EPISODES_DIR, f'{video_id}.mp3')
+        audio_path = None
+        # Check for existing downloaded files
+        for f in os.listdir(EPISODES_DIR):
+            if f.startswith(f'{video_id}.') and not f.endswith('_clean.mp3'):
+                candidate = os.path.join(EPISODES_DIR, f)
+                if os.path.getsize(candidate) > 0:
+                    audio_path = candidate
+                    logger.info(f"Found existing audio file: {audio_path}")
+                    break
 
-        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
-            raise Exception(f"Audio file for {video_id} is missing or empty")
-        logger.info(f"Downloaded podcast: {audio_path}")
+        # Download if no existing file found
+        if not audio_path:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': os.path.join(EPISODES_DIR, f'{video_id}.%(ext)s'),
+                'quiet': False,
+                'http_headers': {'User-Agent': 'Mozilla/5.0'},
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=True)
+                audio_path = ydl.prepare_filename(info)
+                
+            if not os.path.exists(audio_path):
+                for f in os.listdir(EPISODES_DIR):
+                    if f.startswith(f'{video_id}.'):
+                        audio_path = os.path.join(EPISODES_DIR, f)
+                        break
 
-        response = requests.get(f'https://sponsor.ajay.app/api/skipSegments?videoID={video_id}', timeout=10)
-        segments = response.json() if response.status_code == 200 else []
+        # Verify successful download
+        if not audio_path or os.path.getsize(audio_path) == 0:
+            raise ValueError(f"Download failed for {video_id}")
 
-        logger.info(f"Beginning to remove {len(segments)} segments from audio...")
-        audio = AudioSegment.from_mp3(audio_path)
-        cleaned_audio = AudioSegment.empty()
-        start = 0
-        for segment in segments:
-            end = int(segment['segment'][0] * 1000)
-            if end > start:
-                cleaned_audio += audio[start:end]
-            start = int(segment['segment'][1] * 1000)
-        if start < len(audio):
-            cleaned_audio += audio[start:]
+        # Get sponsor segments
+        response = requests.get(
+            f'https://sponsor.ajay.app/api/skipSegments?videoID={video_id}',
+            timeout=10
+        )
+        segments = sorted(response.json(), key=lambda x: x['segment'][0]) if response.ok else []
 
-        cleaned_audio.export(clean_audio_path, format='mp3')
+        # Merge overlapping segments
+        merged = []
+        for seg in segments:
+            if not merged:
+                merged.append(seg)
+            else:
+                last = merged[-1]
+                if seg['segment'][0] <= last['segment'][1]:
+                    merged[-1]['segment'][1] = max(last['segment'][1], seg['segment'][1])
+                else:
+                    merged.append(seg)
+
+        # Calculate keep intervals
+        total_duration = get_duration(audio_path)
+        intervals = []
+        prev_end = 0.0
+
+        for seg in merged:
+            start, end = seg['segment']
+            if start > prev_end:
+                intervals.append((prev_end, start))
+            prev_end = max(prev_end, end)
+
+        if prev_end < total_duration:
+            intervals.append((prev_end, total_duration))
+
+        # Process with ffmpeg
+        if not intervals:
+            logger.info("No segments to remove, converting to MP3")
+            subprocess.run([
+                'ffmpeg', '-y', '-i', audio_path,
+                '-c:a', 'libmp3lame', '-q:a', '2', clean_audio_path
+            ], check=True)
+        else:
+            filter_chain = []
+            concat_inputs = []
+            for i, (start, end) in enumerate(intervals):
+                filter_chain.append(f"[0:a]atrim=start={start}:end={end},asetpts=PTS-STARTPTS[part{i}]")
+                concat_inputs.append(f"[part{i}]")
+
+            filter_complex = "; ".join(filter_chain) + "; " + \
+                            "".join(concat_inputs) + \
+                            f"concat=n={len(concat_inputs)}:v=0:a=1[out]"
+
+            subprocess.run([
+                'ffmpeg', '-y', '-i', audio_path,
+                '-filter_complex', filter_complex,
+                '-map', '[out]', '-c:a', 'libmp3lame', '-q:a', '2', clean_audio_path
+            ], check=True)
+
         os.remove(audio_path)
         logger.info(f"Successfully processed {video_id}")
         return clean_audio_path
+
     except Exception as e:
-        logger.error(f"Error processing video {video_id}: {str(e)}\n{traceback.format_exc()}")
+        logger.error(f"Error processing {video_id}: {str(e)}\n{traceback.format_exc()}")
+        if audio_path and os.path.exists(audio_path):
+            try: os.remove(audio_path)
+            except: pass
         return None
 
 def clean_thumbnail_url(url):
@@ -135,10 +214,10 @@ def get_playlist_info(yt_url):
     except Exception as e:
         return "Sponsor-Free Podcast", "Error fetching playlist info", "", "", []
 
-def get_video_info(video_id):
+def get_video_info(video_id, force_update=False):
     """Fetch metadata for a single video with caching, including thumbnails."""
     cache = load_cache(VIDEO_METADATA_CACHE, {})
-    if video_id in cache:
+    if video_id in cache and not force_update:
         return cache[video_id]
 
     try:
