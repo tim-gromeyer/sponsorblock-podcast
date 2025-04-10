@@ -8,7 +8,7 @@ import os
 import logging
 import traceback
 import json
-import time
+from datetime import timedelta
 
 app = Flask(__name__)
 
@@ -194,7 +194,11 @@ def generate_rss(yt_url):
             title=video_info['title'],
             summary=video_info.get('description', "No description available"),
             image=video_info['thumbnail'],  # Use video-specific thumbnail
-            media=Media(audio_url, estimated_size, type='audio/mpeg'),
+            media=Media(audio_url,
+                        estimated_size,
+                        type='audio/mpeg',
+                        duration=timedelta(seconds=video_info.get('duration', 0)),
+                        ),
             link=f'https://www.youtube.com/watch?v={video_id}',
         ))
         logger.info(f"Added episode {video_id} to RSS feed")
