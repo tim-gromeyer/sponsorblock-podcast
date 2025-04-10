@@ -3,7 +3,7 @@ from urllib.parse import unquote
 import yt_dlp
 import requests
 from pydub import AudioSegment
-from podgen import Podcast, Episode, Media
+from podgen import Podcast, Episode, Media, Person
 import os
 import logging
 import traceback
@@ -103,6 +103,7 @@ def get_playlist_info(yt_url):
             current_videos = info.get('entries', [])
             playlist_title = info.get('title', 'Sponsor-Free Podcast')
             playlist_description = info.get('description', 'A podcast feed with sponsor segments removed')
+            playlist_author = info.get('uploader', 'Unknown')
             thumbnails = info.get('thumbnails', [])  # Fetch playlist thumbnails
 
             # Select the highest resolution thumbnail (the last one is usually the highest)
@@ -126,9 +127,9 @@ def get_playlist_info(yt_url):
 
             save_cache(VIDEO_METADATA_CACHE, cache)
 
-            return playlist_title, playlist_description, thumbnail_url, video_ids
+            return playlist_title, playlist_description, playlist_author, thumbnail_url, video_ids
     except Exception as e:
-        return "Sponsor-Free Podcast", "Error fetching playlist info", "", []
+        return "Sponsor-Free Podcast", "Error fetching playlist info", "", "", []
 
 def get_video_info(video_id):
     """Fetch metadata for a single video with caching, including thumbnails."""
@@ -166,7 +167,7 @@ def generate_rss(yt_url):
     yt_url = unquote(yt_url)
     logger.info(f"Generating RSS for {yt_url}")
 
-    playlist_title, playlist_description, playlist_thumbnail, videos_ids = get_playlist_info(yt_url)
+    playlist_title, playlist_description, playlist_author, playlist_thumbnail, videos_ids = get_playlist_info(yt_url)
     if len(videos_ids) == 0:
         return Response("Error: No videos found in playlist", status=500)
 
@@ -175,7 +176,8 @@ def generate_rss(yt_url):
         website=BASE_URL,
         description=playlist_description or "No description available",
         explicit=False,
-        image=playlist_thumbnail
+        image=playlist_thumbnail,
+        authors=[Person(playlist_author)]
     )
 
     for video_id in videos_ids:
@@ -184,10 +186,12 @@ def generate_rss(yt_url):
         estimated_size = video_info['duration'] * 24000 if video_info['duration'] else 0
 
         podcast.episodes.append(Episode(
+            id=video_id,
             title=video_info['title'],
             summary=video_info.get('description', "No description available"),
             image=video_info['thumbnail'],  # Use video-specific thumbnail
-            media=Media(audio_url, estimated_size, type='audio/mpeg')
+            media=Media(audio_url, estimated_size, type='audio/mpeg'),
+            link=f'https://www.youtube.com/watch?v={video_id}',
         ))
         logger.info(f"Added episode {video_id} to RSS feed")
 
