@@ -112,7 +112,7 @@ def get_playlist_info(yt_url):
             thumbnails = info.get('thumbnails', [])
 
             # Select the highest resolution thumbnail and clean the URL
-            thumbnail_url = clean_thumbnail_url(thumbnails[-1]['url'] if thumbnails else '')
+            thumbnail_url = thumbnails[-1]['url'] if thumbnails else '' # TODO: self host the thumbnail, itnues doesn't support query params, but the thumbnail URL needs them
 
             # Cache videos
             cache = load_cache(VIDEO_METADATA_CACHE, {})
