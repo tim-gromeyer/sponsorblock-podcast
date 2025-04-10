@@ -1,11 +1,7 @@
-FROM python:3.11-slim
+FROM python:alpine
 
-# Install FFmpeg and build tools
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    python3-flask \
-    python3-requests \
-    && rm -rf /var/lib/apt/lists/*
+# Install FFmpeg and build dependencies
+RUN apk add --no-cache ffmpeg
 
 # Set working directory
 WORKDIR /app
@@ -13,7 +9,7 @@ WORKDIR /app
 # Copy requirements file
 COPY requirements.txt .
 
-# Upgrade pip, install wheel, and install requirements
+# Install requirements
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
