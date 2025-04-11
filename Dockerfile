@@ -16,7 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py models.py ./
+COPY app.py models.py video_processor.py ./
 
 # Expose port
 EXPOSE 5000
