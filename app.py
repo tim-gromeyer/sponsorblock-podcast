@@ -50,6 +50,8 @@ def generate_rss(yt_identifier):
                 duration=timedelta(seconds=video.duration),
             ),
             link=video.youtube_url,
+            # Set publication_date to a datetime object parsed from the string with format YYYYMMDD
+            publication_date=f"{video.upload_date}T00:00:00+00:00",
         ))
         logger.info(f"Added episode {video.id} to RSS feed")
 
