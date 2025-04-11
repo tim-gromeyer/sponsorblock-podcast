@@ -6,6 +6,9 @@ RUN apk add --no-cache ffmpeg
 # Set working directory
 WORKDIR /app
 
+# Create required directories
+RUN mkdir -p episodes cache
+
 # Copy requirements file
 COPY requirements.txt .
 
@@ -13,7 +16,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY app.py .
+COPY app.py models.py ./
 
 # Expose port
 EXPOSE 5000

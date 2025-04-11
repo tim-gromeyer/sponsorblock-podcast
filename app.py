@@ -9,6 +9,7 @@ import traceback
 import json
 from datetime import timedelta
 import subprocess
+from models import Video, Playlist
 
 app = Flask(__name__)
 
@@ -163,66 +164,70 @@ def get_playlist_info(yt_url):
     try:
         with yt_dlp.YoutubeDL({'extract_flat': True, 'quiet': False, 'skip_download': True}) as ydl:
             info = ydl.extract_info(yt_url, download=False)
-            current_videos = info.get('entries', [])
-            playlist_title = info.get('title', 'Sponsor-Free Podcast')
-            playlist_description = info.get('description', 'A podcast feed with sponsor segments removed')
-            playlist_author = info.get('uploader', 'Unknown')
-            thumbnails = info.get('thumbnails', [])
-
-            # Select the highest resolution thumbnail and clean the URL
-            thumbnail_url = thumbnails[-1]['url'] if thumbnails else '' # TODO: self host the thumbnail, itnues doesn't support query params, but the thumbnail URL needs them
+            playlist = Playlist.from_yt_info(info)
 
             # Cache videos
             cache = load_cache(VIDEO_METADATA_CACHE, {})
-            for video in current_videos:
-                video_id = video['id']
+            for video_entry in info.get('entries', []):
+                video_id = video_entry['id']
                 if video_id not in cache:
-                    video_thumbnails = video.get('thumbnails', [])
+                    video_thumbnails = video_entry.get('thumbnails', [])
                     video_info = {
-                        'title': video.get('title', f"Video {video_id}"),
-                        'description': video.get('description', "No description available"),
+                        'title': video_entry.get('title', f"Video {video_id}"),
+                        'description': video_entry.get('description', "No description available"),
                         'thumbnail': clean_thumbnail_url(video_thumbnails[-1]['url'] if video_thumbnails else ''),
-                        'duration': video.get('duration', 0)
+                        'duration': video_entry.get('duration', 0)
                     }
                     cache[video_id] = video_info
 
-            video_ids = {v['id'] for v in current_videos}
             save_cache(VIDEO_METADATA_CACHE, cache)
+            return playlist
 
-            return playlist_title, playlist_description, playlist_author, thumbnail_url, video_ids
     except Exception as e:
-        return "Sponsor-Free Podcast", "Error fetching playlist info", "", "", []
+        return Playlist(
+            title="Sponsor-Free Podcast",
+            description="Error fetching playlist info",
+            author="",
+            thumbnail_url="",
+            video_ids=set()
+        )
 
-def get_video_info(video_id, force_update=False):
+def get_video_info(video_id, force_update=False) -> Video:
     """Fetch metadata for a single video with caching, including thumbnails."""
     cache = load_cache(VIDEO_METADATA_CACHE, {})
     if video_id in cache and not force_update:
-        return cache[video_id]
+        return Video.from_dict(video_id, cache[video_id])
 
     try:
         with yt_dlp.YoutubeDL({'quiet': False}) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
             thumbnails = info.get('thumbnails', [])
-            # Select the highest resolution thumbnail and clean the URL
-            thumbnail_url = clean_thumbnail_url(thumbnails[-1]['url'] if thumbnails else '')
-
-            video_info = {
-                'title': info.get('title', f"Video {video_id}"),
-                'description': info.get('description', "No description available"),
-                'thumbnail': thumbnail_url,
-                'duration': info.get('duration', 0)
+            video = Video(
+                id=video_id,
+                title=info.get('title', f"Video {video_id}"),
+                description=info.get('description', "No description available"),
+                thumbnail_url=clean_thumbnail_url(thumbnails[-1]['url'] if thumbnails else ''),
+                duration=info.get('duration', 0)
+            )
+            
+            cache[video_id] = {
+                'title': video.title,
+                'description': video.description,
+                'thumbnail': video.thumbnail_url,
+                'duration': video.duration
             }
-            cache[video_id] = video_info
             save_cache(VIDEO_METADATA_CACHE, cache)
-            return video_info
+            return video
+            
     except Exception as e:
         logger.error(f"Error fetching info for {video_id}: {str(e)}")
-        return {
-            'title': f"Video {video_id}",
-            'description': "Error fetching description",
-            'thumbnail': '',
-            'duration': 0
-        }
+        return Video(
+            id=video_id,
+            title=f"Video {video_id}",
+            description="Error fetching description",
+            thumbnail_url='',
+            duration=0
+        )
 
 def get_youtube_url(identifier):
     """Convert various YouTube identifiers to full URLs."""
@@ -241,37 +246,37 @@ def generate_rss(yt_identifier):
     yt_url = get_youtube_url(yt_identifier)
     logger.info(f"Generating RSS for {yt_url}")
 
-    playlist_title, playlist_description, playlist_author, playlist_thumbnail, videos_ids = get_playlist_info(yt_url)
-    if len(videos_ids) == 0:
+    playlist = get_playlist_info(yt_url)
+    if not playlist.video_ids:
         return Response("Error: No videos found in playlist", status=500)
 
     podcast = Podcast(
-        name=playlist_title,
+        name=playlist.title,
         website=BASE_URL,
-        description=playlist_description or "No description available",
+        description=playlist.description,
         explicit=False,
-        image=playlist_thumbnail,
-        authors=[Person(playlist_author)]
+        image=playlist.thumbnail_url,
+        authors=[Person(playlist.author)]
     )
 
-    for video_id in videos_ids:
-        video_info = get_video_info(video_id)
-        audio_url = f'{BASE_URL}episodes/{video_id}_clean.mp3'
-        estimated_size = video_info['duration'] * 24000 if video_info['duration'] else 0
+    for video_id in playlist.video_ids:
+        video = get_video_info(video_id)
+        audio_url = f'{BASE_URL}episodes/{video.id}_clean.mp3'
 
         podcast.episodes.append(Episode(
-            id=video_id,
-            title=video_info['title'],
-            summary=video_info.get('description', "No description available"),
-            image=video_info['thumbnail'],  # Use video-specific thumbnail
-            media=Media(audio_url,
-                        estimated_size,
-                        type='audio/mpeg',
-                        duration=timedelta(seconds=video_info.get('duration', 0)),
-                        ),
-            link=f'https://www.youtube.com/watch?v={video_id}',
+            id=video.id,
+            title=video.title,
+            summary=video.description,
+            image=video.thumbnail_url,
+            media=Media(
+                audio_url,
+                video.estimated_size,
+                type='audio/mpeg',
+                duration=timedelta(seconds=video.duration),
+            ),
+            link=video.youtube_url,
         ))
-        logger.info(f"Added episode {video_id} to RSS feed")
+        logger.info(f"Added episode {video.id} to RSS feed")
 
     try:
         rss_xml = podcast.rss_str()

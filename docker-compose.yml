@@ -9,9 +9,11 @@ services:
       - "5000:5000"  # Map host port 5000 to container port 5000
     volumes:
       - episodes:/app/episodes  # Persist the episodes directory
+      - cache:/app/cache
     environment:
       - FLASK_ENV=production  # Optional: Set Flask environment
     restart: unless-stopped  # Restart policy
 
 volumes:
-  episodes:  # Named volume for persistent storage
+  episodes:  # For storing processed audio files
+  cache:     # For storing metadata and playlist cache
