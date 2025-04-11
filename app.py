@@ -71,24 +71,41 @@ def generate_rss(yt_identifier):
 
 @app.route('/episodes/<filename>')
 def serve_episode(filename):
+    if not filename.endswith('_clean.mp3'):
+        return Response("Invalid file format requested", status=400)
+
     video_id = filename.replace('_clean.mp3', '')
-    clean_audio_path = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
     lock_path = os.path.join(LOCK_DIR, f'{video_id}.lock')
+    
+    # Check both possible file formats
+    clean_mp3 = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
+    clean_m4a = os.path.join(EPISODES_DIR, f'{video_id}_clean.m4a')
+    
+    # Prefer MP3 if exists, fall back to M4A
+    if os.path.exists(clean_mp3) and os.path.getsize(clean_mp3) > 0:
+        return send_from_directory(EPISODES_DIR, filename)
+    elif os.path.exists(clean_m4a) and os.path.getsize(clean_m4a) > 0:
+        return send_from_directory(EPISODES_DIR, f'{video_id}_clean.m4a')
 
-    if not os.path.exists(clean_audio_path) or os.path.getsize(clean_audio_path) == 0:
-        lock = FileLock(lock_path, timeout=300)  # Wait up to 5 minutes
-        try:
-            with lock:
-                # Check again in case another process created the file while we waited
-                if not os.path.exists(clean_audio_path) or os.path.getsize(clean_audio_path) == 0:
-                    logger.info(f"Audio for {video_id} not found, processing now")
-                    audio_path = process_video(video_id)
-                    if not audio_path:
-                        return Response(f"Error processing audio for {video_id}", status=500)
-        except Timeout:
-            return Response("Timed out waiting for file processing to complete", status=500)
-
-    return send_from_directory(EPISODES_DIR, filename)
+    # Process if neither exists
+    lock = FileLock(lock_path, timeout=300)  # Wait up to 5 minutes
+    try:
+        with lock:
+            # Double-check after acquiring lock
+            if os.path.exists(clean_mp3) and os.path.getsize(clean_mp3) > 0:
+                return send_from_directory(EPISODES_DIR, filename)
+            elif os.path.exists(clean_m4a) and os.path.getsize(clean_m4a) > 0:
+                return send_from_directory(EPISODES_DIR, f'{video_id}_clean.m4a')
+            
+            logger.info(f"Audio for {video_id} not found, processing now")
+            audio_path = process_video(video_id)
+            if not audio_path:
+                return Response(f"Error processing audio for {video_id}", status=500)
+            
+            # Return whichever format was created
+            return send_from_directory(EPISODES_DIR, os.path.basename(audio_path))
+    except Timeout:
+        return Response("Timed out waiting for file processing to complete", status=500)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

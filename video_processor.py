@@ -41,18 +41,24 @@ def save_cache(file_path, data):
 
 def process_video(video_id):
     """Process video with optimized downloading and slicing."""
-    clean_audio_path = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
+    # Check for existing clean audio in both formats
+    clean_mp3 = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
+    clean_m4a = os.path.join(EPISODES_DIR, f'{video_id}_clean.m4a')
     
-    if os.path.exists(clean_audio_path) and os.path.getsize(clean_audio_path) > 0:
-        logger.info(f"Using existing clean audio for {video_id}")
-        return clean_audio_path
+    if os.path.exists(clean_mp3) and os.path.getsize(clean_mp3) > 0:
+        logger.info(f"Using existing clean MP3 for {video_id}")
+        return clean_mp3
+    elif os.path.exists(clean_m4a) and os.path.getsize(clean_m4a) > 0:
+        logger.info(f"Using existing clean M4A for {video_id}")
+        return clean_m4a
 
     try:
         audio_path = None
         total_duration = None
+        
         # Check for existing downloaded files
         for f in os.listdir(EPISODES_DIR):
-            if f.startswith(f'{video_id}.') and not f.endswith('_clean.mp3'):
+            if f.startswith(f'{video_id}.') and not f.endswith(('_clean.mp3', '_clean.m4a')):
                 candidate = os.path.join(EPISODES_DIR, f)
                 if os.path.getsize(candidate) > 0:
                     audio_path = candidate
@@ -63,7 +69,7 @@ def process_video(video_id):
 
         if not audio_path:
             ydl_opts = {
-                'format': 'bestaudio/best',
+                'format': 'bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio',
                 'outtmpl': os.path.join(EPISODES_DIR, f'{video_id}.%(ext)s'),
                 'quiet': False,
                 'http_headers': {'User-Agent': 'Mozilla/5.0'},
@@ -74,7 +80,7 @@ def process_video(video_id):
                 audio_path = ydl.prepare_filename(info)
                 total_duration = info.get('duration', 0)
 
-            # Parse info and cache it
+            # Cache metadata
             cache = load_cache(VIDEO_METADATA_CACHE, {})
             cache[video_id] = Video.from_yt_info(info).to_dict()
             save_cache(VIDEO_METADATA_CACHE, cache)
@@ -82,12 +88,14 @@ def process_video(video_id):
         if not audio_path or os.path.getsize(audio_path) == 0:
             raise ValueError(f"Download failed for {video_id}")
 
+        # Fetch sponsor segments
         response = requests.get(
             f'https://sponsor.ajay.app/api/skipSegments?videoID={video_id}',
             timeout=10
         )
         segments = sorted(response.json(), key=lambda x: x['segment'][0]) if response.ok else []
 
+        # Merge overlapping segments
         merged = []
         for seg in segments:
             if not merged:
@@ -99,25 +107,39 @@ def process_video(video_id):
                 else:
                     merged.append(seg)
 
+        # Calculate keep intervals
         intervals = []
         prev_end = 0.0
-
         for seg in merged:
             start, end = seg['segment']
             if start > prev_end:
                 intervals.append((prev_end, start))
             prev_end = max(prev_end, end)
-
         if prev_end < total_duration:
             intervals.append((prev_end, total_duration))
 
+        # Process audio based on segments
         if not intervals:
-            logger.info("No segments to remove, converting to MP3")
-            subprocess.run([
-                'ffmpeg', '-y', '-i', audio_path,
-                '-c:a', 'libmp3lame', '-q:a', '2', clean_audio_path
-            ], check=True)
+            logger.info("No segments to remove, optimizing output")
+            original_ext = os.path.splitext(audio_path)[1].lower()
+            
+            if original_ext == '.m4a':
+                clean_path = clean_m4a
+                os.rename(audio_path, clean_path)
+            elif original_ext == '.mp3':
+                clean_path = clean_mp3
+                os.rename(audio_path, clean_path)
+            else:
+                clean_path = clean_mp3
+                subprocess.run([
+                    'ffmpeg', '-y', '-threads', '0', '-i', audio_path,
+                    '-c:a', 'libmp3lame', '-q:a', '2', clean_path
+                ], check=True)
+                os.remove(audio_path)
+            
+            return clean_path
         else:
+            logger.info(f"Processing {len(intervals)} segments")
             filter_chain = []
             concat_inputs = []
             for i, (start, end) in enumerate(intervals):
@@ -128,16 +150,18 @@ def process_video(video_id):
                            "".join(concat_inputs) + \
                            f"concat=n={len(concat_inputs)}:v=0:a=1[out]"
 
+            # Use MP3 for faster processing when editing is needed
+            clean_path = clean_mp3
             subprocess.run([
-                'ffmpeg', '-y', '-i', audio_path,
+                'ffmpeg', '-y', '-threads', '0', '-i', audio_path,
                 '-filter_complex', filter_complex,
-                '-map', '[out]', '-c:a', 'libmp3lame', '-q:a', '2', clean_audio_path
+                '-map', '[out]', '-c:a', 'libmp3lame', '-q:a', '2', clean_path
             ], check=True)
 
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
-        logger.info(f"Successfully processed {video_id}")
-        return clean_audio_path
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+            logger.info(f"Successfully processed {video_id}")
+            return clean_path
 
     except Exception as e:
         logger.error(f"Error processing {video_id}: {str(e)}\n{traceback.format_exc()}")
