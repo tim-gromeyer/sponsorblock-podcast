@@ -142,7 +142,8 @@ def process_video(video_id):
                 '-map', '[out]', '-c:a', 'libmp3lame', '-q:a', '2', clean_audio_path
             ], check=True)
 
-        os.remove(audio_path, ignore_errors=True)
+        if os.path.exists(audio_path):
+            os.remove(audio_path, )
         logger.info(f"Successfully processed {video_id}")
         return clean_audio_path
 
