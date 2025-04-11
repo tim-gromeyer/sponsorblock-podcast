@@ -2,4 +2,5 @@ flask
 yt-dlp
 requests
 podgen
+filelock
 audioop-lts; python_version>='3.13' # audioop is a dependency of podgen, but it is was removed in Python 3.13

@@ -12,6 +12,12 @@ from video_processor import (
     BASE_URL,
     logger
 )
+from filelock import FileLock, Timeout
+import os.path
+
+# Add near top of file with other imports
+LOCK_DIR = 'cache'
+os.makedirs(LOCK_DIR, exist_ok=True)
 
 app = Flask(__name__)
 
@@ -67,12 +73,20 @@ def generate_rss(yt_identifier):
 def serve_episode(filename):
     video_id = filename.replace('_clean.mp3', '')
     clean_audio_path = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
+    lock_path = os.path.join(LOCK_DIR, f'{video_id}.lock')
 
     if not os.path.exists(clean_audio_path) or os.path.getsize(clean_audio_path) == 0:
-        logger.info(f"Audio for {video_id} not found, processing now")
-        audio_path = process_video(video_id)
-        if not audio_path:
-            return Response(f"Error processing audio for {video_id}", status=500)
+        lock = FileLock(lock_path, timeout=300)  # Wait up to 5 minutes
+        try:
+            with lock:
+                # Check again in case another process created the file while we waited
+                if not os.path.exists(clean_audio_path) or os.path.getsize(clean_audio_path) == 0:
+                    logger.info(f"Audio for {video_id} not found, processing now")
+                    audio_path = process_video(video_id)
+                    if not audio_path:
+                        return Response(f"Error processing audio for {video_id}", status=500)
+        except Timeout:
+            return Response("Timed out waiting for file processing to complete", status=500)
 
     return send_from_directory(EPISODES_DIR, filename)
 
