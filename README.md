@@ -1,57 +1,74 @@
-# 🎙️ sponsorblock-podcast
+# 🎧 SponsorBlock Podcast Generator
 
-**Turn YouTube playlists into sponsor-free podcasts. Zero config. No YouTube API key.**
+Convert YouTube playlists into sponsor-free podcasts with automated segment removal.
 
-## 🚀 What is this?
+## 🎯 Features
 
-`sponsorblock-podcast` is a lightweight Flask-based tool that:
-- Downloads audio from YouTube playlists or channels
-- Automatically removes sponsored segments using the SponsorBlock API
-- Generates an RSS feed to use in any podcast player
+- **Automatic Sponsor Removal**: Leverages the SponsorBlock API to cut out sponsored segments
+- **No API Key Required**: Works without YouTube API credentials
+- **Docker Ready**: Simple deployment with Docker Compose
+- **Format Optimization**: Supports MP3 and M4A audio formats
+- **Smart Caching**: Caches processed audio and metadata for faster delivery
+- **RSS Feed Generation**: Creates podcast-compatible RSS feeds
 
-All of this **without requiring any API keys**, manual playlist setup, or complex configuration.
+## 🚀 Quick Start
 
-## 🧠 Why it’s special
-
-Most tools that deal with YouTube:
-- Require Google API keys or authentication
-- Need manual editing to remove unwanted content
-- Aren't podcast-player-friendly
-
-This project is:
-- 🔌 Plug & Play — drop a YouTube playlist URL into your RSS reader
-- 🧼 Sponsor-free — powered by the SponsorBlock community
-- 🐳 Dockerized — run everything with a single command
-
-## 🛠️ Usage
-
-### 1. Clone the repo
+1. Clone the repository:
 ```bash
-git clone https://github.com/yourname/sponsorblock-podcast.git
+git clone https://github.com/yourusername/sponsorblock-podcast.git
 cd sponsorblock-podcast
 ```
 
-### 2. Run with Docker Compose
+2. Start with Docker Compose:
 ```bash
-docker-compose up
+docker compose up -d
 ```
 
-### 3. Access your feed
-Navigate to:
+3. Access your podcast feed:
 ```
-http://localhost:5000/<YOUTUBE_PLAYLIST_OR_CHANNEL_URL_ENCODED>/podcast.rss
+http://localhost:5000/YOUR_YOUTUBE_PLAYLIST_ID/podcast.rss
 ```
-Example:
+
+### 📝 Example URLs
+
+- Playlist: `http://localhost:5000/PLE0hg-LdSfycrpTtMImPSqFLle4yYNzWD/podcast.rss`
+- Channel: `http://localhost:5000/@ChannelName/podcast.rss`
+
+## 🛠️ Development Setup
+
+Requirements:
+- Python 3.8+
+- FFmpeg
+- pip
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
-http://localhost:5000/https%3A%2F%2Fwww.youtube.com%2Fplaylist%3Flist%3DPLxyz/podcast.rss
+
+2. Run the development server:
+```bash
+python app.py
 ```
+
+## 🔧 Configuration
+
+The service uses these directories:
+- `episodes/`: Processed audio files
+- `cache/`: Metadata and playlist information
 
 ## ⚠️ Disclaimer
 
-- For personal use only. Downloading content may be subject to YouTube’s terms of service.
-- Audio files and metadata are cached locally.
-- Use responsibly and do not overload SponsorBlock or YouTube.
+- This tool is intended for **personal use only**
+- Using this tool may be subject to YouTube's Terms of Service
+- Not affiliated with YouTube, Google, or SponsorBlock
+- Please respect content creators' rights and YouTube's policies
+- Use responsibly to avoid overloading external services
 
----
+## 🔍 SEO Keywords
 
-Happy listening, without the interruptions. 🎧
+podcast generator, youtube to podcast, sponsor removal, sponsorblock integration, youtube playlist converter, podcast rss feed, youtube channel podcast, audio extraction, automated podcast creation, sponsor-free content
+
+## 📄 License
+
+MIT License - Copyright (c) 2025 Tim Gromeyer
