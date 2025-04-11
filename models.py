@@ -1,6 +1,11 @@
 from dataclasses import dataclass
-from typing import List, Optional, Set
-from datetime import timedelta
+from typing import Set
+
+def clean_thumbnail_url(url):
+    """Remove query parameters from thumbnail URLs."""
+    if not url:
+        return ''
+    return url.split('?')[0]
 
 @dataclass
 class Video:
@@ -24,9 +29,36 @@ class Video:
             id=video_id,
             title=data.get('title', f"Video {video_id}"),
             description=data.get('description', "No description available"),
-            thumbnail_url=data.get('thumbnail', ''),
+            thumbnail_url=data.get('thumbnail_url', ''),
             duration=data.get('duration', 0)
         )
+    
+    @classmethod
+    def from_yt_info(cls, info: dict) -> 'Video':
+        thumbnails = info.get('thumbnails', [])
+        thumbnail_url = ''
+        for thumb in reversed(thumbnails):
+            url = thumb.get('url', '').lower()
+            if any(ext in url for ext in ('.png', '.jpg', '.jpeg')):
+                thumbnail_url = thumb.get('url', '')
+                break
+
+        return cls(
+            id=info.get('id', ''),
+            title=info.get('title', f"Video {info.get('id', '')}"),
+            description=info.get('description', "No description available"),
+            thumbnail_url=clean_thumbnail_url(thumbnail_url),
+            duration=info.get('duration', 0)
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'title': self.title,
+            'description': self.description,
+            'thumbnail_url': self.thumbnail_url,
+            'duration': self.duration
+        }
 
 @dataclass
 class Playlist:

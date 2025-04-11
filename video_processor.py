@@ -39,12 +39,6 @@ def save_cache(file_path, data):
     except Exception as e:
         logger.error(f"Error saving cache {file_path}: {str(e)}")
 
-def clean_thumbnail_url(url):
-    """Remove query parameters from thumbnail URLs."""
-    if not url:
-        return ''
-    return url.split('?')[0]
-
 def process_video(video_id):
     """Process video with optimized downloading and slicing."""
     clean_audio_path = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
@@ -79,6 +73,11 @@ def process_video(video_id):
                 info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=True)
                 audio_path = ydl.prepare_filename(info)
                 total_duration = info.get('duration', 0)
+
+            # Parse info and cache it
+            cache = load_cache(VIDEO_METADATA_CACHE, {})
+            cache[video_id] = Video.from_yt_info(info).to_dict()
+            save_cache(VIDEO_METADATA_CACHE, cache)
 
         if not audio_path or os.path.getsize(audio_path) == 0:
             raise ValueError(f"Download failed for {video_id}")
@@ -158,13 +157,7 @@ def get_playlist_info(yt_url):
             for video_entry in info.get('entries', []):
                 video_id = video_entry['id']
                 if video_id not in cache:
-                    video_thumbnails = video_entry.get('thumbnails', [])
-                    video_info = {
-                        'title': video_entry.get('title', f"Video {video_id}"),
-                        'description': video_entry.get('description', "No description available"),
-                        'thumbnail': clean_thumbnail_url(video_thumbnails[-1]['url'] if video_thumbnails else ''),
-                        'duration': video_entry.get('duration', 0)
-                    }
+                    video_info = Video.from_yt_info(video_entry).to_dict()
                     cache[video_id] = video_info
 
             save_cache(VIDEO_METADATA_CACHE, cache)
@@ -188,21 +181,8 @@ def get_video_info(video_id, force_update=False) -> Video:
     try:
         with yt_dlp.YoutubeDL({'quiet': False}) as ydl:
             info = ydl.extract_info(f'https://www.youtube.com/watch?v={video_id}', download=False)
-            thumbnails = info.get('thumbnails', [])
-            video = Video(
-                id=video_id,
-                title=info.get('title', f"Video {video_id}"),
-                description=info.get('description', "No description available"),
-                thumbnail_url=clean_thumbnail_url(thumbnails[-1]['url'] if thumbnails else ''),
-                duration=info.get('duration', 0)
-            )
-            
-            cache[video_id] = {
-                'title': video.title,
-                'description': video.description,
-                'thumbnail': video.thumbnail_url,
-                'duration': video.duration
-            }
+            video = Video.from_yt_info(info)
+            cache[video_id] = video.to_dict()
             save_cache(VIDEO_METADATA_CACHE, cache)
             return video
             
