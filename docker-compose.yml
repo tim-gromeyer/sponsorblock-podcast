@@ -10,8 +10,6 @@ services:
     volumes:
       - episodes:/app/episodes  # Persist the episodes directory
       - cache:/app/cache
-    environment:
-      - FLASK_ENV=production  # Optional: Set Flask environment
     restart: unless-stopped  # Restart policy
 
 volumes:

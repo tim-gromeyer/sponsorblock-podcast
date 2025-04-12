@@ -14,6 +14,7 @@ from video_processor import (
 )
 from filelock import FileLock, Timeout
 import os.path
+from waitress import serve
 
 # Add near top of file with other imports
 LOCK_DIR = 'cache'
@@ -108,4 +109,5 @@ def serve_episode(filename):
         return Response("Timed out waiting for file processing to complete", status=500)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Replace Flask's development server with Waitress
+    serve(app, host='0.0.0.0', port=5000)
