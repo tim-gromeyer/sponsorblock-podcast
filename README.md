@@ -65,10 +65,9 @@ The service uses these directories:
 - Please respect content creators' rights and YouTube's policies
 - Use responsibly to avoid overloading external services
 
-## 🔍 SEO Keywords
-
-podcast generator, youtube to podcast, sponsor removal, sponsorblock integration, youtube playlist converter, podcast rss feed, youtube channel podcast, audio extraction, automated podcast creation, sponsor-free content
-
 ## 📄 License
 
 MIT License - Copyright (c) 2025 Tim Gromeyer
+
+-----------
+Convert YouTube to Podcast, Ad-Free Podcast, Remove YouTube Ads, Podcast RSS Feed Generator, Docker Podcast Server, YouTube Playlist to Podcast, MP3 Podcast Generator, M4A Podcast Generator, Podcast from YouTube Videos, Audio Download without Ads, Podcast with SponsorBlock
