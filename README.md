@@ -15,7 +15,7 @@ Convert YouTube playlists into sponsor-free podcasts with automated segment remo
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/sponsorblock-podcast.git
+git clone https://github.com/tim-gromeyer/sponsorblock-podcast.git
 cd sponsorblock-podcast
 ```
 
