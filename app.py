@@ -79,14 +79,18 @@ def serve_episode(filename):
     lock_path = os.path.join(LOCK_DIR, f'{video_id}.lock')
     
     # Check both possible file formats
-    clean_mp3 = os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3')
-    clean_m4a = os.path.join(EPISODES_DIR, f'{video_id}_clean.m4a')
+    clean_mp3 = os.path.normpath(os.path.join(EPISODES_DIR, f'{video_id}_clean.mp3'))
+    clean_m4a = os.path.normpath(os.path.join(EPISODES_DIR, f'{video_id}_clean.m4a'))
+    
+    # Ensure paths are within the EPISODES_DIR
+    if not clean_mp3.startswith(os.path.abspath(EPISODES_DIR)) or not clean_m4a.startswith(os.path.abspath(EPISODES_DIR)):
+        return Response("Invalid file path", status=400)
     
     # Prefer MP3 if exists, fall back to M4A
     if os.path.exists(clean_mp3) and os.path.getsize(clean_mp3) > 0:
-        return send_from_directory(EPISODES_DIR, filename)
+        return send_from_directory(EPISODES_DIR, os.path.basename(clean_mp3))
     elif os.path.exists(clean_m4a) and os.path.getsize(clean_m4a) > 0:
-        return send_from_directory(EPISODES_DIR, f'{video_id}_clean.m4a')
+        return send_from_directory(EPISODES_DIR, os.path.basename(clean_m4a))
 
     # Process if neither exists
     lock = FileLock(lock_path, timeout=300)  # Wait up to 5 minutes
