@@ -83,7 +83,8 @@ def serve_episode(filename):
     clean_m4a = os.path.normpath(os.path.join(EPISODES_DIR, f'{video_id}_clean.m4a'))
     
     # Ensure paths are within the EPISODES_DIR
-    if not clean_mp3.startswith(os.path.abspath(EPISODES_DIR)) or not clean_m4a.startswith(os.path.abspath(EPISODES_DIR)):
+    abs_episodes_dir = os.path.abspath(EPISODES_DIR)
+    if not clean_mp3.startswith(abs_episodes_dir) or not clean_m4a.startswith(abs_episodes_dir):
         return Response("Invalid file path", status=400)
     
     # Prefer MP3 if exists, fall back to M4A
