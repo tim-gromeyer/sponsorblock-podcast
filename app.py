@@ -78,6 +78,12 @@ def generate_rss(yt_identifier):
         ))
         logger.info(f"Added episode {video.id} to RSS feed")
 
+    # Add all videos to the download queue
+    for video_id in playlist.video_ids:
+        if video_id not in processing_set:
+            processing_set.add(video_id)
+            download_queue.put(video_id)
+
     try:
         rss_xml = podcast.rss_str()
         logger.info("RSS generation complete")
